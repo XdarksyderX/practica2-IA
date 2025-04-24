@@ -1,6 +1,8 @@
 #include "rescatador.hpp"
 #include "motorlib/util.h"
 
+#include <limits.h>
+
 Action ComportamientoRescatador::think(Sensores sensores)
 {
   Action accion = IDLE;
@@ -84,48 +86,76 @@ void ComportamientoRescatador::actualizarEstado(const Sensores &sensores)
  * @param sensores
  * @return
  */
-Action ComportamientoRescatador::tomarDecisionNivel_0(const Sensores &sensores)
+Action ComportamientoRescatador::tomarDecisionNivel_0(const Sensores &s)
 {
-  Action accion = IDLE;
+    // 0) En base → paro
+    if (s.superficie[0] == 'X')
+        return IDLE;
 
-  // si estoy en el destino deseado, parar
-  if (sensores.superficie[0] == 'X')
-  {
-    accion = IDLE;
-  }
-  else if (giro45Izqda != 0)
-  {
-    // tengo que completar el giro haciendo giro
-    // suave a la derecha
-    accion = TURN_SR;
-    giro45Izqda--;
-  }
-  else
-  {
-    // se determina la casilla mas interesante
-    int indice = indiceCasillaMasInteresante(sensores);
-
-    // en funcion del indice, actuar
-    switch (indice)
-    {
-    case 2:
-      accion = WALK;
-      break;
-    case 1:
-      accion = TURN_L;
-      giro45Izqda = 1;
-      break;
-    case 3:
-      accion = TURN_SR;
-      break;
-    case 0:
-      accion = TURN_L;
-      break;
+    // 0.5) Completar giro suave (TURN_L + TURN_SR)
+    if (giroPendiente > 0) {
+        --giroPendiente;
+        return TURN_SR;
     }
-  }
 
-  // se devuelve la accion
-  return accion;
+    // 1) Fase “ir a la X más cercana”
+    int mejorMov = -1;
+    int mejorDist = INT_MAX;
+
+    for (int j = 1; j < 16; ++j) {
+        if (s.superficie[j] != 'X') continue;
+        DFC dX = calcularDiferencias(j, s.rumbo);
+
+        for (int i : {1, 2, 3}) {
+            // viabilidad: desnivel + libre de agentes
+            int dh = abs(s.cota[0] - s.cota[i]);
+            bool altOK = dh < 2 || (tieneZapatillas && dh < 3);
+            if (!altOK || s.agentes[i] != '_') continue;
+
+            DFC dI = calcularDiferencias(i, s.rumbo);
+            int manh = abs(dX.df - dI.df) + abs(dX.dc - dI.dc);
+
+            if (manh < mejorDist) {
+                mejorDist = manh;
+                mejorMov  = i;
+            }
+        }
+    }
+
+    if (mejorMov != -1) {
+        switch (mejorMov) {
+            case 2: return WALK;
+            case 1: giroPendiente = 1; return TURN_L;
+            case 3: return TURN_SR;
+        }
+    }
+
+    // 2) Fase "no veo X": prioridad D > C > S > ?
+    auto score = [&](int i) {
+        int dh = abs(s.cota[0] - s.cota[i]);
+        bool altOK = dh < 2 || (tieneZapatillas && dh < 3);
+        if (!altOK || s.agentes[i] != '_') return 0;
+        char t = s.superficie[i];
+        if (!tieneZapatillas && t == 'D') return 50;
+        if (t == 'C')                     return 20;
+        if (t == 'S')                     return 5;
+        if (t == '?')                     return 1;
+        return 0;
+    };
+
+    int pI = score(1), pF = score(2), pD = score(3);
+    if (pF >= pI && pF >= pD && pF > 0)       return WALK;
+    if (pI > 0) { giroPendiente = 1; return TURN_L; }
+    if (pD > 0)                              return TURN_SR;
+
+    // 3) Romper bucles: alterno giro
+    if (ultimaAccion == TURN_L) {
+        ultimaAccion = TURN_SR;
+        return TURN_SR;
+    } else {
+        ultimaAccion = TURN_L;
+        return TURN_L;
+    }
 }
 
 /**

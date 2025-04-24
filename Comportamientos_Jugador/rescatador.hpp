@@ -147,10 +147,6 @@ class ComportamientoRescatador : public Comportamiento{
 
 public:
   ComportamientoRescatador(unsigned int size = 0) : Comportamiento(size){
-    // Inicializar Variables de Estado Niveles 0,1,4
-    ultimaAccion = IDLE;
-    tieneZapatillas = false;
-    giro45Izqda = 0;
   }
 
   ComportamientoRescatador(std::vector<std::vector<unsigned char>> mapaR, std::vector<std::vector<unsigned char>> mapaC) : Comportamiento(mapaR,mapaC)
@@ -171,15 +167,9 @@ public:
   Action ComportamientoRescatadorNivel_4(Sensores sensores);
 
 private:
-  // Variables de Estado
-  // ultima accion realizada
-  Action ultimaAccion;
-
-  // si tengo las zapatillas
-  bool tieneZapatillas;
-
-  // si se realizo giro a izquierda
-  int giro45Izqda;
+   Action ultimaAccion = IDLE;
+   bool   tieneZapatillas = false;
+   int    giroPendiente   = 0;     // 0 = nada, 1 = falta TURN_SR
 
   /**
    * metodo de actualizacion de las variables de estado

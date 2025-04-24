@@ -1,6 +1,7 @@
 #include "../Comportamientos_Jugador/auxiliar.hpp"
 #include <iostream>
 #include "motorlib/util.h"
+#include <limits.h>
 
 // ************************** MÉTODOS PÚBLICOS **************************
 
@@ -136,7 +137,7 @@ Action ComportamientoAuxiliar::ComportamientoAuxiliarNivel_E(Sensores sensores)
 
    if (!hayPlan)
    {
-      plan = busquedaAnchura();
+      //plan = busquedaAnchura();
       hayPlan = true;
    }
    else if (hayPlan && !plan.empty())
@@ -162,51 +163,71 @@ void ComportamientoAuxiliar::actualizarEstado(const Sensores &sensores)
    rellenarMapa(sensores, mapaCotas, false);
 }
 
-Action ComportamientoAuxiliar::tomarDecisionNivel_0(const Sensores &sensores)
+Action ComportamientoAuxiliar::tomarDecisionNivel_0(const Sensores &s)
 {
-   if (sensores.superficie[0] == 'X')
-   {
-      return IDLE;
-   }
+    // 0) Si ya estoy en base, paro
+    if (s.superficie[0] == 'X') {
+        ultimaAccion = IDLE;
+        return IDLE;
+    }
 
-   if (giro45Izqda > 0)
-   {
-      giro45Izqda--;
-      return TURN_L;
-   }
+    // 1) Ceder paso si veo al Rescatador (r) en 1-2-3
+    if (s.agentes[1]=='r' || s.agentes[2]=='r' || s.agentes[3]=='r') {
+        ultimaAccion = IDLE;
+        return IDLE;
+    }
 
-   char frente = viablePorAltura(2, sensores);
-   char izqda = viablePorAltura(1, sensores);
-   char dcha = viablePorAltura(3, sensores);
+    // 2) Recopilo todas las casillas "viables" en mi cono (1…15)
+    struct Cand { int idx, prio; int df, dc; };
+    std::vector<Cand> cand;
+    for (int j = 1; j < 16; ++j) {
+        // a) terrenos relevantes y viabilidad
+        char t = s.superficie[j];
+        int dh = abs(s.cota[0] - s.cota[j]);
+        bool alturaOK = dh < 2;               // Auxiliar nunca zapatillas
+        bool libre    = s.agentes[j] == '_';  // evita choque
+        if (!alturaOK || !libre) continue;
 
-   if (frente == 'X')
-   {
-      return WALK;
-   }
-   else if (izqda == 'X')
-   {
-      giro45Izqda = 1;
-      return TURN_L;
-   }
-   else if (dcha == 'X')
-   {
-      return TURN_SR;
-   }
-   else if (frente == 'C')
-   {
-      return WALK;
-   }
-   else if (izqda == 'C')
-   {
-      giro45Izqda = 1;
-      return TURN_L;
-   }
-   else if (dcha == 'C')
-   {
-      return TURN_SR;
-   }
+        // b) prioridad: X(4) > C(3) > S(2) > ?(1)
+        int p = (t=='X'?4:(t=='C'?3:(t=='S'?2:(t=='?'?1:0))));
+        if (p == 0) continue;
 
-   return TURN_SR;
+        // c) posición relativa
+        DFC d = calcularDiferencias(j, s.rumbo);
+        cand.push_back({j, p, d.df, d.dc});
+    }
+
+    // 3) Si hay candidatos, elijo el "mejor"
+    if (!cand.empty()) {
+        // a) máximo priority; b) mínimo manhattan; c) mínimo angular (|j-2|)
+        int best = 0;
+        for (int k = 1; k < (int)cand.size(); ++k) {
+            auto &A = cand[k], &B = cand[best];
+            if (A.prio > B.prio) best = k;
+            else if (A.prio == B.prio) {
+                int mA = abs(A.df) + abs(A.dc);
+                int mB = abs(B.df) + abs(B.dc);
+                if (mA < mB) best = k;
+                else if (mA == mB) {
+                    if (abs(A.idx - 2) < abs(B.idx - 2)) best = k;
+                }
+            }
+        }
+
+        int objetivo = cand[best].idx;
+        // 4) Si está justo enfrente, avanzo
+        if (objetivo == 2) {
+            ultimaAccion = WALK;
+            return WALK;
+        }
+        // 5) Si está a la izquierda o derecha, giro 45° a la derecha
+        ultimaAccion = TURN_SR;
+        return TURN_SR;
+    }
+
+    // 6) Si no hay ningún candidato viable, me paro
+    ultimaAccion = IDLE;
+    return IDLE;
 }
 
 int ComportamientoAuxiliar::indiceCasillaMasInteresante(const Sensores &sensores)

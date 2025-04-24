@@ -38,6 +38,7 @@ public:
     tieneZapatillas = false;
     hayPlan = false;
     giro45Izqda = 0;
+    giros = 0;
   }
 
   ComportamientoAuxiliar(std::vector<std::vector<unsigned char>> mapaR, std::vector<std::vector<unsigned char>> mapaC) : Comportamiento(mapaR,mapaC) {
@@ -61,9 +62,9 @@ public:
   Action ComportamientoAuxiliarNivel_E(Sensores sensores);
 
 private:
-  // Definir Variables de Estado
-  // ultima accion realizada
-  Action ultimaAccion;
+  Action ultimaAccion   = IDLE;   // última acción ejecutada
+  int    girosPendientes = 0;     // giros RIGHT restantes para completar un "LEFT"
+  int    girosSeguidos   = 0;     // cuenta de TURN_SR consecutivos
 
   //Lista de acciones a realizar
   list<Action> plan;
@@ -76,6 +77,8 @@ private:
 
    // almacena la realizacion de giro a la izquierda
    int giro45Izqda;
+   int    srLeftCounter   = 0;
+   int giros;
 
    /**
     * metodo para actualizar las variables de estado
