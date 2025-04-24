@@ -169,7 +169,11 @@ public:
 private:
    Action ultimaAccion = IDLE;
    bool   tieneZapatillas = false;
+   int   leftCounter = 0;
    int    giroPendiente   = 0;     // 0 = nada, 1 = falta TURN_SR
+   int  lastF   = -1;   // fila anterior
+int  lastC   = -1;   // col  anterior
+int  stuck2  = 0;    // cuántas veces he vuelto a la misma casilla
 
   /**
    * metodo de actualizacion de las variables de estado
@@ -200,6 +204,8 @@ private:
    * @return
    */
   char viablePorAltura(int indice, const Sensores & sensores);
+  bool caminoViable(const Sensores &s,int idx) const;
+  int scoreCasilla(const Sensores& s, int i);
 };
 
 #endif

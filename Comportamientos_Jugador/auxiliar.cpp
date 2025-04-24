@@ -165,69 +165,71 @@ void ComportamientoAuxiliar::actualizarEstado(const Sensores &sensores)
 
 Action ComportamientoAuxiliar::tomarDecisionNivel_0(const Sensores &s)
 {
-    // 0) Si ya estoy en base, paro
-    if (s.superficie[0] == 'X') {
-        ultimaAccion = IDLE;
+    // 0) Si ya estoy en la base, paro
+    if (s.superficie[0] == 'X')
         return IDLE;
-    }
 
-    // 1) Ceder paso si veo al Rescatador (r) en 1-2-3
-    if (s.agentes[1]=='r' || s.agentes[2]=='r' || s.agentes[3]=='r') {
-        ultimaAccion = IDLE;
-        return IDLE;
-    }
-
-    // 2) Recopilo todas las casillas "viables" en mi cono (1…15)
-    struct Cand { int idx, prio; int df, dc; };
-    std::vector<Cand> cand;
-    for (int j = 1; j < 16; ++j) {
-        // a) terrenos relevantes y viabilidad
-        char t = s.superficie[j];
-        int dh = abs(s.cota[0] - s.cota[j]);
-        bool alturaOK = dh < 2;               // Auxiliar nunca zapatillas
-        bool libre    = s.agentes[j] == '_';  // evita choque
-        if (!alturaOK || !libre) continue;
-
-        // b) prioridad: X(4) > C(3) > S(2) > ?(1)
-        int p = (t=='X'?4:(t=='C'?3:(t=='S'?2:(t=='?'?1:0))));
-        if (p == 0) continue;
-
-        // c) posición relativa
-        DFC d = calcularDiferencias(j, s.rumbo);
-        cand.push_back({j, p, d.df, d.dc});
-    }
-
-    // 3) Si hay candidatos, elijo el "mejor"
-    if (!cand.empty()) {
-        // a) máximo priority; b) mínimo manhattan; c) mínimo angular (|j-2|)
-        int best = 0;
-        for (int k = 1; k < (int)cand.size(); ++k) {
-            auto &A = cand[k], &B = cand[best];
-            if (A.prio > B.prio) best = k;
-            else if (A.prio == B.prio) {
-                int mA = abs(A.df) + abs(A.dc);
-                int mB = abs(B.df) + abs(B.dc);
-                if (mA < mB) best = k;
-                else if (mA == mB) {
-                    if (abs(A.idx - 2) < abs(B.idx - 2)) best = k;
-                }
-            }
-        }
-
-        int objetivo = cand[best].idx;
-        // 4) Si está justo enfrente, avanzo
-        if (objetivo == 2) {
-            ultimaAccion = WALK;
-            return WALK;
-        }
-        // 5) Si está a la izquierda o derecha, giro 45° a la derecha
-        ultimaAccion = TURN_SR;
+    // 0.5) Si tengo leftCounter pendiente, doy TURN_SR y decremento
+    if (leftCounter > 0) {
+        --leftCounter;
         return TURN_SR;
     }
 
-    // 6) Si no hay ningún candidato viable, me paro
-    ultimaAccion = IDLE;
-    return IDLE;
+    // 1) Fase “ir a la X más cercana”
+    int mejorMov = -1, mejorDist = INT_MAX;
+    for (int j = 1; j < 16; ++j) {
+        if (s.superficie[j] != 'X') continue;
+        DFC dX = calcularDiferencias(j, s.rumbo);
+        for (int i : {1,2,3}) {
+            int dh = abs(s.cota[0] - s.cota[i]);
+            bool altOK = dh < 2 || (tieneZapatillas && dh < 3);
+            if (!altOK || s.agentes[i] != '_') continue;
+            DFC dI = calcularDiferencias(i, s.rumbo);
+            int manh = abs(dX.df - dI.df) + abs(dX.dc - dI.dc);
+            if (manh < mejorDist) {
+                mejorDist = manh;
+                mejorMov  = i;
+            }
+        }
+    }
+    if (mejorMov != -1) {
+        switch (mejorMov) {
+            case 2: 
+                return WALK;
+            case 1:
+                leftCounter = 6;  // 6×TURN_SR = -90°
+                return TURN_SR;
+            case 3:
+                return TURN_SR;
+        }
+    }
+
+    // 2) Fase "no veo X": prioridad D > C > S > ?
+    auto score = [&](int i){
+        int dh = abs(s.cota[0] - s.cota[i]);
+        bool altOK = dh < 2 || (tieneZapatillas && dh < 3);
+        if (!altOK || s.agentes[i] != '_') return 0;
+        char t = s.superficie[i];
+        if (!tieneZapatillas && t == 'D') return 50;
+        if (t == 'C')                     return 20;
+        if (t == 'S')                     return 5;
+        if (t == '?')                     return 1;
+        return 0;
+    };
+
+    int pI = score(1), pF = score(2), pD = score(3);
+    if (pF >= pI && pF >= pD && pF > 0)
+        return WALK;
+    if (pI > 0) {
+        leftCounter = 6;
+        return TURN_SR;
+    }
+    if (pD > 0)
+        return TURN_SR;
+
+    // 3) Fallback: si no hay nada, igual simulo un LEFT para explorar
+    leftCounter = 6;
+    return TURN_SR;
 }
 
 int ComportamientoAuxiliar::indiceCasillaMasInteresante(const Sensores &sensores)
